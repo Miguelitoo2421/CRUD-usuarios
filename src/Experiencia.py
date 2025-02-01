@@ -48,10 +48,13 @@ class LoginForm(QMainWindow):
 
         #   boton para inicio de sesion
         login_button = QPushButton('Inicio de Sesion')
+        login_button.clicked.connect(self.iniciar_sesion)
         main_layout.addWidget(login_button)
 
-        #   boton para pasar a ventana de registro
+
+        #   BOTON PARA PASAR A LA VENTANA DE REGISTRO
         register_button = QPushButton('Registrar')
+        register_button.clicked.connect(self.volver_registro)
         main_layout.addWidget(register_button)
 
         # ESTABLECER EL LAYOUT PRINCIPAL
@@ -62,6 +65,34 @@ class LoginForm(QMainWindow):
         ## CONCLUSION:
         # main_layout --> es unicamente la primera ventana (layout/diseño) que organiza los widgets de la interfaz.
         # central_widget = ---> es ese widget donde se coloca el main_layout, y es el que realmente contiene los campos de usuario, contraseña y botones
+
+    def volver_registro(self):
+        self.login = RegisterForm()
+        self.login.show()
+        self.close()
+
+    def iniciar_sesion(self):
+        usuario = self.username_imput.text()
+        contrasena = self.password_imput.text()
+
+        if not usuario or not contrasena:
+            QMessageBox.warning(self, "ERROR", "Todos los campos son obligatorios")
+
+        conexion = sqlite3.connect('usuarios.db')
+        cursor = conexion.cursor()
+        # seleccioname todo de usuarios donde usuario sea = a usuario
+        cursor.execute("SELECT contrasena FROM usuarios WHERE usuario = ?", (usuario,))
+        resultado = cursor.fetchone() # el resultado será uno ya que cada usuario es unico
+        conexion.close()
+
+        if resultado and bcrypt.checkpw(contrasena.encode(), resultado[0]):
+            self.bienvenida = WelcomeForm()
+            self.bienvenida.show()
+            self.close()
+        else:
+            QMessageBox.critical(self, "ERROR", "Usuario o contraseña incorrectos")
+            self.username_imput.clear()
+            self.password_imput.clear()
 
 class RegisterForm(QMainWindow):
     def __init__(self):
