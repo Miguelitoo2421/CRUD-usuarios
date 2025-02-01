@@ -1,7 +1,10 @@
 #creacion bbdd
 import sqlite3
 import sys
-from PySide6.QtWidgets import QApplication, QMainWindow, QVBoxLayout, QLabel, QLineEdit, QPushButton, QWidget
+
+import bcrypt
+from PySide6.QtWidgets import QApplication, QMainWindow, QVBoxLayout, QLabel, QLineEdit, QPushButton, QWidget, \
+    QMessageBox
 
 
 def crear_base_datos():
@@ -23,7 +26,7 @@ class LoginForm(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle('Inicio de Sesion')
-        self.setGeometry(100, 100, 400, 400)
+        self.setGeometry(100, 100, 300, 250)
 
 
         #   layout diseño en vertical
@@ -64,42 +67,81 @@ class RegisterForm(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle('Inicio de Sesion')
-        self.setGeometry(100, 100, 400, 400)
+        self.setGeometry(100, 100, 300, 250)
 
-        #   layout diseño en vertical
+        #   LAYAUT DISEÑO PRINCIPAL
         main_layout = QVBoxLayout() # layout principal
         title = QLabel('Registro')
         main_layout.addWidget(title)
 
-        #   Entrada de texto para usuario
+        #   ENTRADA DE TEXTO PARA USUARIO
         self.username_imput = QLineEdit(self)
         self.username_imput.setPlaceholderText("Nombre de usuario")
         main_layout.addWidget(self.username_imput)
 
-        #   entrada texto para contraseña
+        #   ENTRADA DE TEXTO PARA CONTRASEÑA
         self.password_imput = QLineEdit(self)
         self.password_imput.setPlaceholderText("Contraseña")
         #ocultamos la contraseña escrita por seguridad
         self.password_imput.setEchoMode(QLineEdit.Password)
         main_layout.addWidget(self.password_imput)
 
-        #   boton para registro de usuario
+        #   BOTON PARA REGISTRO DE USUARIO
         register_button = QPushButton('Registrar')
+        register_button.clicked.connect(self.registrar_usuario) #IMPORTANTE, SE COLOCA registrar_usuario SIN () PARA QUE SE EJECUTE EN RESPUESTA A LA SEÑAL DEL BOTON, SI LO COLOCAMOS CON () LA LLAMAMOS INMEDIATAMENTE
         main_layout.addWidget(register_button)
 
-        #   boton para pasar a ventana de registro
+        #   BOTON PARA PASAR A VENTANA LOGIN(INICIO DE SESION)
         back_button = QPushButton('Iniciar sesion')
+        back_button.clicked.connect(self.volver_login)
         main_layout.addWidget(back_button)
 
         # ESTABLECER EL LAYOUT PRINCIPAL
         central_widget = QWidget()
         central_widget.setLayout(main_layout)
-        self.setCentralWidget(central_widget)   #-----------------------> min 50:47
+        self.setCentralWidget(central_widget)
+
+    # FUNCION QUE NOS LLEVA A LA VENTANA DE LOGIN Y CIERRA EN LA QUE ESTABAMOS
+    def volver_login(self):
+        self.login = LoginForm()
+        self.login.show()
+        self.close()
+
+    # FUNCION PARA REGISTRO DE USUARIO
+    def registrar_usuario(self):
+        usuario = self.username_imput.text()
+        contrasena = self.password_imput.text()
+        #SI NO HAY USUARIO O NO HAY CONTRASEÑA
+        if not usuario or not contrasena: # nos saldrá mensaje para indicar que usuario y contraseña so pueden ser nulos
+            QMessageBox.warning(self, "ERROR", "Todos los campos son obligatorios")
+        else:
+            # ENCRIPTAMOS CONTRASEÑA AÑADIENDO UN SALT ALEATORIO
+            contrasenia_encriptada = bcrypt.hashpw(contrasena.encode(), bcrypt.gensalt())
+            try:
+                conexion = sqlite3.connect('usuarios.db')
+                cursor = conexion.cursor()
+                cursor.execute("INSERT INTO usuarios(usuario, contrasena)  VALUES(?,?)", (usuario, contrasenia_encriptada))
+                conexion.commit()
+                conexion.close()
+                QMessageBox.information(self, "Exito", "Usuario registrado")
+                self.volver_login()
+            except sqlite3.IntegrityError:
+                QMessageBox.critical(self, "ERROR", "Usuario existente")
+
+class WelcomeForm(QMainWindow):
+    def __init__(self):
+        super().__init__()
+        self.setWindowTitle('Bienvenido')
+        self.setGeometry(100, 100, 600, 400)
+
+
 
 if __name__ == '__main__': # dentro de nuestro modulo llamamos a la función
     crear_base_datos()
     app = QApplication(sys.argv)
-    ventana = LoginForm()
+    ventana = RegisterForm()
+    #ventana = LoginForm()
+    #ventana = WelcomeForm()
     ventana.show()
     sys.exit(app.exec())
 
