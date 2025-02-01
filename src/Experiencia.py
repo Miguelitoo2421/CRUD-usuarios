@@ -1,10 +1,11 @@
 #creacion bbdd
 import sqlite3
 import sys
+from base64 import b64encode
 
 import bcrypt
 from PySide6.QtWidgets import QApplication, QMainWindow, QVBoxLayout, QLabel, QLineEdit, QPushButton, QWidget, \
-    QMessageBox
+    QMessageBox, QTableWidget, QTableWidgetItem, QAbstractItemView, QCheckBox
 
 
 def crear_base_datos():
@@ -14,7 +15,8 @@ def crear_base_datos():
     CREATE TABLE IF NOT EXISTS usuarios (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         usuario TEXT NOT NULL UNIQUE,
-        contrasena TEXT NOT NULL UNIQUE
+        contrasena TEXT NOT NULL UNIQUE,
+        es_admin INTEGER NOT NULL DEFAULT 0
     )
     ''')
     conexion.commit() # hacemos el cambio dentro de la base de datos
@@ -81,12 +83,12 @@ class LoginForm(QMainWindow):
         conexion = sqlite3.connect('usuarios.db')
         cursor = conexion.cursor()
         # seleccioname todo de usuarios donde usuario sea = a usuario
-        cursor.execute("SELECT contrasena FROM usuarios WHERE usuario = ?", (usuario,))
+        cursor.execute("SELECT contrasena, es_admin FROM usuarios WHERE usuario = ?", (usuario,))
         resultado = cursor.fetchone() # el resultado será uno ya que cada usuario es unico
         conexion.close()
 
         if resultado and bcrypt.checkpw(contrasena.encode(), resultado[0]):
-            self.bienvenida = WelcomeForm()
+            self.bienvenida = WelcomeForm(usuario, resultado[1]) # IMPORTANTE, ESTE USUARIO NOS LO LLEVAMOS A WelcomeForm para disponer de el
             self.bienvenida.show()
             self.close()
         else:
@@ -117,6 +119,11 @@ class RegisterForm(QMainWindow):
         self.password_imput.setEchoMode(QLineEdit.Password)
         main_layout.addWidget(self.password_imput)
 
+        # CHECK BOX PARA MARCAR SI EL USUARIO ES ADMINISTRADOR
+        self.admin_checkbox = QCheckBox('¿Es Administrador?')
+        main_layout.addWidget(self.admin_checkbox)
+
+
         #   BOTON PARA REGISTRO DE USUARIO
         register_button = QPushButton('Registrar')
         register_button.clicked.connect(self.registrar_usuario) #IMPORTANTE, SE COLOCA registrar_usuario SIN () PARA QUE SE EJECUTE EN RESPUESTA A LA SEÑAL DEL BOTON, SI LO COLOCAMOS CON () LA LLAMAMOS INMEDIATAMENTE
@@ -142,6 +149,8 @@ class RegisterForm(QMainWindow):
     def registrar_usuario(self):
         usuario = self.username_imput.text()
         contrasena = self.password_imput.text()
+        es_admin = 1 if self.admin_checkbox.isChecked() else 0
+
         #SI NO HAY USUARIO O NO HAY CONTRASEÑA
         if not usuario or not contrasena: # nos saldrá mensaje para indicar que usuario y contraseña so pueden ser nulos
             QMessageBox.warning(self, "ERROR", "Todos los campos son obligatorios")
@@ -151,7 +160,7 @@ class RegisterForm(QMainWindow):
             try:
                 conexion = sqlite3.connect('usuarios.db')
                 cursor = conexion.cursor()
-                cursor.execute("INSERT INTO usuarios(usuario, contrasena)  VALUES(?,?)", (usuario, contrasenia_encriptada))
+                cursor.execute("INSERT INTO usuarios(usuario, contrasena,es_admin)  VALUES(?,?,?)", (usuario, contrasenia_encriptada, es_admin))
                 conexion.commit()
                 conexion.close()
                 QMessageBox.information(self, "Exito", "Usuario registrado")
@@ -160,10 +169,91 @@ class RegisterForm(QMainWindow):
                 QMessageBox.critical(self, "ERROR", "Usuario existente")
 
 class WelcomeForm(QMainWindow):
-    def __init__(self):
+    def __init__(self, usuario, es_admin): # este es el usuario que recibimos de la vista LoginForm
         super().__init__()
         self.setWindowTitle('Bienvenido')
         self.setGeometry(100, 100, 600, 400)
+
+        self.usuario = usuario
+        self.es_admin = es_admin
+
+        # LAYOUT PRINCIPAL
+        main_layout = QVBoxLayout()
+
+        # ETIQUETA PRINCIPAL
+        self.welcome_label = QLabel(f'¡Bienvenido,{usuario}!')
+        main_layout.addWidget(self.welcome_label)
+
+        # PINTAR TABLA
+        self.table = QTableWidget()
+        self.table.setColumnCount(2)
+        self.table.setHorizontalHeaderLabels(["Usuario", "Contraseña Encriptada"])
+        self.table.setSelectionBehavior(QAbstractItemView.SelectRows) # al clicar en una selda se selecciona toda la fila
+        main_layout.addWidget(self.table)
+        self.cargar_usuarios()
+
+        if es_admin == 1:
+            # BOTON PARA ELIMINAR CUENTA
+            delele_button = QPushButton('Eliminar')
+            delele_button.clicked.connect(self.borrar_cuenta)
+            main_layout.addWidget(delele_button)
+
+        cerrar_session = QPushButton('Cerrar sesión')
+        cerrar_session.clicked.connect(lambda: self.close())
+        main_layout.addWidget(cerrar_session)
+
+        # Se crea un widget contenedor (QWidget), que servirá como el contenedor principal de la ventana.
+        central_widget = QWidget()
+        central_widget.setLayout(main_layout)
+        self.setCentralWidget(central_widget)
+
+    #
+    def cargar_usuarios(self):
+        conexion = sqlite3.connect('usuarios.db')
+        cursor = conexion.cursor()
+        cursor.execute("SELECT usuario, contrasena FROM usuarios") # obtenemos todos los usuarios y contraseñas
+        usuarios = cursor.fetchall() #  recupera todos los registros como una lista de tuplas, donde cada tupla es un usuario con su contraseña.
+        conexion.close()
+        self.table.setRowCount(len(usuarios)) # creamos tabla y le decimos que el numero de filas será la cantidad de usuarios recuperados
+
+        for row, (usuario, contrasena) in enumerate(usuarios):
+            self.table.setItem(row, 0, QTableWidgetItem(usuario))
+            contrasenia_legible = b64encode(contrasena).decode("utf-8")
+            self.table.setItem(row, 1, QTableWidgetItem(contrasenia_legible))
+
+
+    def borrar_cuenta(self):
+        selected_row = self.table.currentRow() #identificamos fila
+        if selected_row == -1:
+            QMessageBox.warning(self, "ERROR", "Debe seleccionar cuenta para eliminar")
+            return
+
+        usuario = self.table.item(selected_row, 0).text()
+
+        if usuario != self.usuario:  # Verificar si el usuario seleccionado es el mismo que el usuario logueado
+            QMessageBox.warning(self, "ERROR", "Solo puedes eliminar tu propio usuario")
+            return
+
+        respuesta = QMessageBox.question(  # Preguntar confirmación
+            self,
+            "Confirmar",
+            f"¿Está seguro de borrar el usuario '{usuario}'?",
+            QMessageBox.Yes | QMessageBox.No
+        )
+        if respuesta == QMessageBox.Yes:
+            conexion = sqlite3.connect('usuarios.db')
+            cursor = conexion.cursor()
+            cursor.execute("DELETE FROM usuarios WHERE usuario = ?", (usuario,))
+            conexion.commit()
+            conexion.close()
+            QMessageBox.information(self, "Exito", "Usuario borrado correctamente")
+            self.cargar_usuarios()  # Recargar la lista de usuarios
+
+            # COMO SOLO HEMOS CONFIGURADO ELIMINAR NUESTRO PROPIO USUARIO, DESPUES DE HACERLO EL PROGRAMA NOS LLEVA A LA VISTA LoginForm
+            self.login = LoginForm()
+            self.login.show()
+            self.close()
+
 
 
 
